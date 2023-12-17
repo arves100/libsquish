@@ -41,7 +41,8 @@ static int FixFlags( int flags )
 	int fit = flags & ( kColourIterativeClusterFit | kColourClusterFit | kColourRangeFit );
 	int metric = flags & ( kColourMetricPerceptual | kColourMetricUniform );
 	int extra = flags & kWeightColourByAlpha;
-	
+	int format = flags & (kRGBA | kARGB | kBGRA | kRGB | kBGR);
+
 	// set defaults
 	if( method != kDxt3 && method != kDxt5 )
 		method = kDxt1;
@@ -49,9 +50,11 @@ static int FixFlags( int flags )
 		fit = kColourClusterFit;
 	if( metric != kColourMetricUniform )
 		metric = kColourMetricPerceptual;
+	if (format != kARGB && format != kBGRA && format != kRGB && format != kBGR)
+		format = kRGBA;
 		
 	// done
-	return method | fit | metric | extra;
+	return method | fit | metric | extra | format;
 }
 
 void Compress( u8 const* rgba, void* block, int flags )
@@ -133,7 +136,7 @@ int GetStorageRequirements( int width, int height, int flags )
 	return blockcount*blocksize;	
 }
 
-void CompressImage( u8 const* rgba, int width, int height, void* blocks, int flags )
+void CompressImage( u8 const* rgba, int width, int height, int pitch, int bitcount, void* blocks, int flags )
 {
 	// fix any bad flags
 	flags = FixFlags( flags );
@@ -142,18 +145,47 @@ void CompressImage( u8 const* rgba, int width, int height, void* blocks, int fla
 	u8* targetBlock = reinterpret_cast< u8* >( blocks );
 	int bytesPerBlock = ( ( flags & kDxt1 ) != 0 ) ? 8 : 16;
 
-	// loop over blocks
-	for( int y = 0; y < height; y += 4 )
+	int step = bitcount / 8;
+
+	// default: RGBA (or RGB in bitcount 24)
+	int r_mask = 24;
+	int g_mask = 16;
+	int b_mask = 8;
+	int a_mask = 0;
+	bool noalpha = (flags & kRGB) || (flags & kBGR);
+
+	if (flags & kARGB || (flags & kRGB && bitcount == 32))
 	{
-		for( int x = 0; x < width; x += 4 )
+		a_mask = 24;
+		r_mask = 16;
+		g_mask = 8;
+		b_mask = 0;
+	}
+	else if (flags & kBGRA || (flags & kBGR) && bitcount != 32)
+	{
+		b_mask = 24;
+		r_mask = 8;
+	}
+	else if (flags & kBGR) // ABGR
+	{
+		a_mask = 24;
+		b_mask = 16;
+		g_mask = 8;
+		r_mask = 0;
+	}
+
+	// loop over blocks
+	for( int y = 0; y < height; y += step )
+	{
+		for( int x = 0; x < width; x += step )
 		{
 			// build the 4x4 block of pixels
 			u8 sourceRgba[16*4];
 			u8* targetPixel = sourceRgba;
 			int mask = 0;
-			for( int py = 0; py < 4; ++py )
+			for( int py = 0; py < step; ++py )
 			{
-				for( int px = 0; px < 4; ++px )
+				for( int px = 0; px < step; ++px )
 				{
 					// get the source pixel in the image
 					int sx = x + px;
@@ -163,10 +195,20 @@ void CompressImage( u8 const* rgba, int width, int height, void* blocks, int fla
 					if( sx < width && sy < height )
 					{
 						// copy the rgba value
-						u8 const* sourcePixel = rgba + 4*( width*sy + sx );
-						for( int i = 0; i < 4; ++i )
-							*targetPixel++ = *sourcePixel++;
-							
+
+						
+						u8 const* sourcePixel = rgba + (step*sx)+(pitch*sy);
+						unsigned int sourceRgba = *(const unsigned int*)sourcePixel;
+
+						*targetPixel++ = (u8)((sourceRgba >> r_mask) & 0xFF);
+						*targetPixel++ = (u8)((sourceRgba >> g_mask) & 0xFF);
+						*targetPixel++ = (u8)((sourceRgba >> b_mask) & 0xFF);
+
+						if (noalpha)
+							*targetPixel++ = 0xFF; // empty alpha
+						else
+							*targetPixel++ = (u8)((sourceRgba >> a_mask) & 0xFF);
+
 						// enable this pixel
 						mask |= ( 1 << ( 4*py + px ) );
 					}

@@ -63,7 +63,22 @@ enum
 	kColourMetricUniform = ( 1 << 6 ),
 	
 	//! Weight the colour by alpha during cluster fit (disabled by default).
-	kWeightColourByAlpha = ( 1 << 7 )
+	kWeightColourByAlpha = ( 1 << 7 ),
+
+	//! RGBA texture format
+	kRGBA = ( 1 << 8 ),
+
+	//! ARGB texture format
+	kARGB = ( 1 << 9 ),
+
+	//! BGRA texture format
+	kBGRA = ( 1 << 10 ),
+
+	//! RGB texture (no alpha)
+	kRGB = ( 1 << 11 ),
+
+	//! BGR texture format
+	kBGR = (1 << 13 ),
 };
 
 // -----------------------------------------------------------------------------
@@ -213,8 +228,20 @@ int GetStorageRequirements( int width, int height, int flags );
 	Internally this function calls squish::Compress for each block. To see how
 	much memory is required in the compressed image, use
 	squish::GetStorageRequirements.
+
+	The output format of the texture will always be an RGBA texture.
 */
-void CompressImage( u8 const* rgba, int width, int height, void* blocks, int flags );
+void CompressImage( u8 const* rgba, int width, int height,
+	int pitch, int bitcount, void* blocks, int flags );
+
+/*
+	Compatibility with the old api
+*/
+inline void CompressImage(u8 const* rgba, int width, int height,
+	void* blocks, int flags)
+{
+	CompressImage(rgba, width, height, width, 32, blocks, flags);
+}
 
 // -----------------------------------------------------------------------------
 
